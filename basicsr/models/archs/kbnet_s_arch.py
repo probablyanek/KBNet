@@ -9,6 +9,25 @@ from basicsr.models.archs.kb_utils import KBAFunction
 from basicsr.models.archs.kb_utils import LayerNorm2d, SimpleGate
 
 
+class FourierChannelAttention(nn.Module):
+    def __init__(self, channel, reduction=4):
+        super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.conv = nn.Sequential(
+            nn.Conv2d(channel, channel // reduction, 1, bias=False),
+            nn.GELU(),
+            nn.Conv2d(channel // reduction, channel, 1, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        # Compute FFT magnitude along spatial dimensions
+        fft_feat = torch.fft.fft2(x, dim=(-2, -1)).abs()
+        y = self.avg_pool(fft_feat)
+        y = self.conv(y)
+        return y
+
+
 class KBBlock_s(nn.Module):
     def __init__(self, c, DW_Expand=2, FFN_Expand=2, nset=32, k=3, gc=4, lightweight=False):
         super(KBBlock_s, self).__init__()
@@ -78,6 +97,7 @@ class KBBlock_s(nn.Module):
 
         self.beta = nn.Parameter(torch.zeros((1, c, 1, 1)) + 1e-2, requires_grad=True)
         self.gamma = nn.Parameter(torch.zeros((1, c, 1, 1)) + 1e-2, requires_grad=True)
+        self.fourier_att = FourierChannelAttention(c)
 
     def init_p(self, weight, bias=None):
         init.kaiming_uniform_(weight, a=math.sqrt(5))

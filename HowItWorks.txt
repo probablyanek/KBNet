@@ -1,0 +1,659 @@
+Springer Nature 2021 LATEX template
+KBNet: Kernel Basis Network for Image Restoration
+Yi Zhang1
+, Dasong Li1
+, Xiaoyu Shi1
+, Dailan He1
+, Kangning Song2
+, Xiaogang
+Wang1
+, Hongwei Qin2 and Hongsheng Li1
+1Multimedia Laboratory, The Chinese University of Hong Kong.
+2SenseTime Research.
+Contributing authors: zhangyi@link.cuhk.edu.hk; dasongli@link.cuhk.edu.hk;
+xiaoyushi@link.cuhk.edu.hk; hedailan@link.cuhk.edu.hk; songkangning@sensetime.com;
+xgwang@ee.cuhk.edu.hk; qinhongwei@sensetime.com; hsli@ee.cuhk.edu.hk;
+Abstract
+How to aggregate spatial information plays an essential role in learning-based image restoration.
+Most existing CNN-based networks adopt static convolutional kernels to encode spatial information, which cannot aggregate spatial information adaptively. Recent transformer-based architectures
+achieve adaptive spatial aggregation. But they lack desirable inductive biases of convolutions and
+require heavy computational costs. In this paper, we propose a kernel basis attention (KBA) module,
+which introduces learnable kernel bases to model representative image patterns for spatial information aggregation. Different kernel bases are trained to model different local structures. At each spatial
+location, they are linearly and adaptively fused by predicted pixel-wise coefficients to obtain aggregation weights. Based on the KBA module, we further design a multi-axis feature fusion (MFF) block to
+encode and fuse channel-wise, spatial-invariant, and pixel-adaptive features for image restoration. Our
+model, named kernel basis network (KBNet), achieves state-of-the-art performances on more than ten
+benchmarks over image denoising, deraining, and deblurring tasks while requiring less computational
+cost than previous SOTA methods. Code will be released at https://github.com/zhangyi-3/kbnet.
+Keywords: Image Restoration, Dynamic Kernel, Feature Fusion
+1 Introduction
+Image restoration is one of the most foundational
+tasks in computer vision, which aims to remove
+the unavoidable degradation of the input images
+and produce clean outputs. Image restoration is
+highly challenging as it is an ill-posed problem. It
+does not only play an important role in a wide
+range of low-level applications (e.g. night sight
+on smartphones) but also benefits many high-level
+vision tasks [42].
+Linearly aggregating spatial neighborhood
+information is a common component and plays
+a key role in deep neural networks for feature
+encoding in image restoration. Convolutional neural networks (CNNs) are one of the dominant
+choices for local information aggregation. They
+use globally-shared convolution kernels in the
+convolution operator for aggregating neighboring
+information, such as using dilated convolutions [6,
+11] to increase the receptive fields and adopting
+multi-stage [71] or multi-scale features [23, 70] for
+better encoding spatial context. While CNN-based
+methods show clear performance gains than traditional handcrafted methods [5, 8, 17, 58], the
+convolutions utilized static and spatially invariant
+1
+arXiv:2303.02881v1 [cs.CV] 6 Mar 2023
+Springer Nature 2021 LATEX template
+kernels for all spatial locations and therefore have
+limited capacity to handle different types of image
+structures and textures. While a few works [7, 47,
+66] in the low-level task of burst image denoising were proposed to adaptively encode local
+neighborhoods features, they require heavy computational costs to predict adaptive convolutional
+kernels of each output pixel location.
+Recently, the vision transformers have shown
+great progress where the attention mechanism
+uses dot products between pairwise positions to
+obtain the linear aggregation weights for encoding local information. A few efforts [12, 40, 61,
+63] have been made in image restoration. In
+IPT [12], the global attention layers are adopted to
+aggregate from all spatial positions, which, however, face challenges on handling high-resolution
+images. A series of window-based self-attention
+solutions [40, 61, 63] have been proposed to alleviate the quadratic computational cost with respect
+to the input size. While self-attention enables each
+pixel to adaptively aggerate spatial information
+from the assigned window, it lacks the inductive biases possessed by convolutions (e.g. locality, translation equivalence, etc.), which is useful
+in modeling local structures of images. Some
+work [18, 26, 44] also reported that using convolutions to aggregate spatial information can produce
+more satisfying results than self-attention.
+In this paper, to tackle the challenge of effectively and efficiently aggregating neighborhood
+information for image restoration, we propose
+a kernel basis network (KBNet) with a novel
+kernel basis attention (KBA) module to adaptively aggregate spatial neighborhood information, which takes advantage of both CNNs and
+transformers. Since natural images generally share
+similar patterns across different spatial locations,
+we first introduce a set of learnable kernel bases to
+learn various local patterns. The kernel bases specify how the neighborhood information should be
+aggregated for each pixel, and different learnable
+kernel bases are trained to capture various image
+patterns. Intuitively, similar local neighborhoods
+would use similar kernel bases so that the bases
+are learned to capture more representative spatial
+patterns. Given the kernel bases, we adopt a separate lightweight convolution branch to predict the
+linear combination coefficients of kernel bases for
+each pixel. The learnable kernel bases are linearly
+fused by the coefficients to produce adaptive and
+diverse aggregation weights for each pixel.
+Unlike the window-based self-attention in previous works [40, 61, 63] that uses dot products
+between pairwise positions to generate spatial
+aggregation weights, the KBA module generates
+the weights by adaptively combining the learnable kernel bases. It naturally keeps the inductive
+biases of convolutions while handling various spatial contexts adaptively. KBA module is also different from existing dynamic convolutions [27, 32]
+or kernel prediction networks [7, 47, 62, 66], which
+predict all the kernel weights directly. The aggregation weights by the KBA module are predicted
+by spatially adaptive fusing the shared kernel
+bases. Thus, our KBA module is more lightweight
+and easier to optimize. The ablation study validates the proposed design choice.
+Based on the KBA module, we design a multiaxis feature fusion (MFF) block to extract and
+fuse diverse features for image restoration. We
+combine operators of spatial and channel dimensions to better capture image context. In the
+MFF block, three branches, including channel
+attention, spatial-invariant, and pixel-wise adaptive feature extractions are parallelly performed
+and then fused by point-wise production.
+By integrating the proposed KBA module and
+MFF block into the widely used U-Net architectures with two variants of feed-forward networks,
+our proposed KBNet achieves state-of-the-art performances on more than ten benchmarks of image
+denoising, deraining, and deblurring.
+The main contributions of this work are summarized as follows:
+1. We propose a novel kernel basis attention
+(KBA) module to effectively aggregate the spatial information via a series of learnable kernel
+bases and linearly fusing the kernel bases.
+2. We propose an effective multi-axis feature
+fusion (MFF) block, which extracts and fuses
+channel-wise, spatial-invariant, and pixel-wise
+adaptive features for image restoration.
+3. Our method kernel basis network (KBNet)
+demonstrates its generalizability and state-ofthe-art performances on three image restoration tasks including denoising, deblurring, and
+deraining.
+Springer Nature 2021 LATEX template
+3
+2 Related Work
+Deep image restoration has been a popular topic
+in the field of computer vision and has been extensively studied for many years. In this section, we
+review some of the most relevant works.
+2.1 Traditional Methods
+Since image restoration is a highly ill-posed problem, many priors or noise models [80] are adopted
+to help image restoration. Many properties of
+natural images have been discussed in traditional methods, like sparsity [19, 45], non-local
+self-similarity [8, 17], total variation [56]. Selfsimilarity is one of the natural image properties
+used in image restoration. Traditional methods
+like non-local means [8], BM3D [17] leverage the
+self-similarity to denoise images by averaging the
+intensities of similar patches in the image. While
+traditional methods have achieved good performance, they tend to produce blurry results and
+fail in more challenging cases.
+2.2 CNNs for Image Restoration
+Static networks. With the popularity of deep
+neural networks, learning-based methods become
+the mainstream of image restoration [2, 10, 13,
+16, 36, 37, 49, 70, 71, 83]. One of the earliest works on deep image denoising using CNNs
+is the DnCNN [75]. Then, lots of CNN-based
+models have been proposed from different design
+perspectives: residual learning [6, 81], multi-scale
+features [70], multi-stage design [38, 71], nonlocal information [51, 82]. While they improve
+the learning capacity of CNN models, they use
+the normal convolutions as the basic components,
+which are static and spatially invariant. As a
+result, plain and textural areas cannot be identified and processed adaptively, which is crucial for
+image restoration.
+Dynamic networks for Image Restoration. Another line of research has focused on
+leveraging dynamic networks to image restoration
+tasks. Kernel prediction networks [7, 32, 47, 66]
+(KPNs) use the kernel-based attention mechanism
+in a CNN architecture to aggregate spatial information adaptively. But, KPNs predict the kernels
+directly which have significant memory and computing requirements, as well as their difficulty to
+optimize.
+2.3 Transformers for Image
+Restoration
+Transformers have shown great progress in natural language and high-level vision tasks. For image
+restoration, IPT [12] is the first method to adopt
+a transformer (both encoder and decoder) into
+image restoration. But, it leads to heavy computational costs and can only perform on fixed
+patch size 48 × 48. Most of the following works
+only utilize the encoder and tend to reduce the
+computational cost. A seris of window-based selfattention [40, 61, 63] has been proposed. Each
+pixel can aggregate the aggregate spatial information through the dot-productions between all
+pairwise positions. More recently, some work [13,
+18, 26, 44] indicate that self-attention is not
+necessary to achieve state-of-the-art results.
+3 Method
+In this section, we aim to develop a novel kernel basis network (KBNet) for image restoration.
+We first describe the kernel basis attention (KBA)
+module to adaptively aggregate the spatial information. Then, the multi-axis feature fusion (MFF)
+block is introduced to encode and fuse diverse features for image restoration. Finally, we describe
+the integration of the MFF block into the U-Net.
+3.1 Kernel Basis Attention Module
+How to gather spatial information at each pixel
+plays an essential role in feature encoding for
+low-level vision tasks. Most CNN-based methods [6, 15, 75] utilize spatial-invariant kernels to
+encode spatial information of the input image,
+which cannot adaptively process local spatial context for each pixel. While self-attention [40, 61, 63]
+can process spatial context adaptively according
+to the attention weights from the dot products
+between pairwise positions, it lacks the inherent
+inductive biases of convolutions. To tackle the
+challenges, we propose the kernel basis attention
+(KBA) module to encode spatial information by
+fusing learnable kernel bases adaptively.
+As shown in Fig. 1, given an input feature
+map X ∈ RH×W×C , our KBA learns a set of
+learnable kernel bases W shared across all spatial locations and all images to capture common
+spatial patterns. The learnable kernel bases W ∈
+Springer Nature 2021 LATEX template
+Learnable Kernel Bases
+Kernel Basis Attention Module
+convolution
+! !!
+" #
+$[&,(]
+!′
+Linear Fusion
+!![#,%]
+(#,%)
+(#,%)
+Fusion Coefficient Map
+Input Enhanced Feature Map Output
+Fused kernel weights
+Fusion Coefficients
+"[&,(]
+(#,%)
+Fig. 1 An overview of kernel basis attention (KBA) Module. With the input feature map X, the KBA module first predicts
+the fusion coefficient map F to linearly fuse the learnable kernel bases W for each location. Then, the fused kernel weights
+M adaptively encode the local neighborhood of the enhanced feature map Xe to produce the output feature map X0
+.
+R
+N×C×4×K2
+contains N grouped convolution kernels. The C and K2 denote channel number and
+kernel size respectively. The group size is set to C
+4
+for balancing the performance-efficiency tradeoff.
+Fusion Coefficients Prediction. To adaptively combine the N learnable kernel bases at
+each spatial location, given the input feature
+map X ∈ R
+H×W×C , a lightweight convolution
+branch is used to predict the N kernel bases
+fusion coefficients F ∈ R
+H×W×N at each location. The lightweight convolution branch contains
+two layers. The first 3 × 3 grouped convolution
+layer reduces the feature map channel to N with
+group size N. To further transform the features,
+a SimpleGate activation function [13] followed by
+another 3 × 3 convolution layer is adopted.
+Here, a natural choice is to normalize the
+fusion coefficients at each location by the softmax
+function so that the fusion coefficients sum up to 1.
+However, we experimentally find that using softmax normalization hinders the final performance
+since it tends to select the most important kernel
+basis instead of fusing multiple kernel bases for
+capturing spatial contexts.
+Kernel Basis Fusion. With the predicted fusion
+coefficient map F ∈ R
+H×W×N and kernel bases
+W ∈ R
+N×C×4×K2
+, the fused weights M[i, j] for
+the spatial position (i, j) can be obtained by the
+linear combination of learnable kernel bases:
+M[i, j] = X
+N
+t=0
+F[i, j, t]W[t],
+where W[t] ∈ R
+C×4×K2
+denotes the t-th learnable kernel basis, and F[i, j, t] ∈ R
+N and M[i, j] ∈
+R
+C×4×K2
+are the t-th kernel fusion coefficients
+and the fused kernel weights at the position (i, j)
+respectively. Besides, the input feature map X is
+transformed by a 1 × 1 convolution to obtain the
+feature map Xe for adaptive convolution with the
+fused kernel weights M. The output feature map
+X0 at position (i, j) is therefore obtained as
+X0
+[i, j] = GroupConv(Xe[i, j], M[i, j]),
+where X0 ∈ R
+H×W×C is the output feature map
+and maintains the input spatial resolution.
+Discussion. Previous kernel prediction methods [7, 32, 47, 66] also predict pixel-wise kernels for
+convolution. But they adopt a heavy design to predict all kernel weights directly. Specifically, even
+predicting K × K depthwise kernels requires producing a (C ×K ×K) channel feature map, which
+is quite costly in terms of both computational cost
+Springer Nature 2021 LATEX template
+5
+KBA
+LayerNorm
+Channel Attention DWconv
+X
+1x1 conv
+1x1 conv 1x1 conv
+1x1 conv
+X
+Layernorm
+·
+Point-wise
+multiplication
+Multi (b) Feed-Forward Network -axis Feature Fusion (MFF) Block
+Fig. 2 An overview of Multi-axis Feature Fusion (MFF)
+Block. Channel attention, depthwise convolution, and our
+KBA module process the input features parallelly. The
+outputs of three operations are fused by point-wise multiplication.
+and memory. In contrast, Our method trains a
+series of learnable kernel bases, which only needs
+to predict an N-channel fusing coefficient map
+(where N  C × K2
+). Such a design avoids predicting a large number of kernel weights for each
+pixel and the representative kernel bases shared
+across all locations are still efficiently optimized.
+Compared with window-based self-attention [61,
+63], our spatial aggregation weights are linearly
+combined from the shared kernel bases instead
+of being produced individually through dot products between pairwise positions. The KBA module
+adopts a set of learnable convolution kernels for
+modeling different local structures and fuses those
+kernel weights adaptively for each location. Thus,
+it benefits from the inductive bias of convolutions while achieving spatially-adaptive processing
+effectively.
+3.2 Multi-axis Feature Fusion Block
+To encode diverse features for image restoration,
+based on the KBA module, we design a Multi-axis
+Features Fusion (MFF) block to handle channel
+and spatial information. As shown in Fig. 2, MFF
+block first adopts a layer normalization to stabilize
+the training and then performs spatial information aggregation. A residual shortcut is used to
+facilitate training convergence. Following the normalization layer, three operators are adopted in
+parallel. The first operator is a 3×3 depthwise convolution to capture spatially-invariant features.
+The second operator is channel attention [28] to
+modulate the feature channels. The third one is
+our KBA module to adaptively handle spatial features. The three branches output feature maps of
+the same size. Point-wise multiplication is used to
+fuse the diverse feature from the three branches
+directly, which also serves as the non-linear activation [13] of the MFF block.
+3.3 Intergration of MFF Block into
+U-Net
+We adopt the widely used U-shape architectures.
+The U-shape architecture processes the input
+noisy image I ∈ R
+H×W×3
+to generate a clean
+image of the same resolution. The first convolution layer transforms the input image into the
+feature map F ∈ R
+H×W×C . Then, the feature
+map F is processed by an encoder-decoder architecture, each of which has four stages. At each
+encoder stage, the input resolution is downsampled by a convolution layer with stride 2 and the
+channels are expanded by a factor of 2. Within
+each stage, the MFF blocks are stacked in both
+the encoder and decoder. In each decoder stage,
+the feature map resolution and the channels are
+reversed by the pixel-shuffle operation. Besides,
+the shortcuts from the encoder are passed to the
+decoder layer of the same stages and fused simply by an addition operation. The last convolution
+transforms the feature map to the same shape
+as the input. Inspired by the design of transformer blocks, the MFF block is also followed by
+a Feed Forward Network (FFN) at each stage. We
+present two variants of our method KBNets and
+KBNetl
+. KBNets adopts the normal FFN block
+with SimpleGate [13] activation function to perform the position-wise non-linear transformation.
+KBNetl utilizes a heavier transposed attention in
+Restormer [69] to achieve more complex positionwise transformation. The computational costs of
+KBNets and KBNetl are around 70G and 108G
+MACs separately. Detailed network architectures
+can be found in Sec. 4.1.
+4 Results
+In this section, we first describe the implementation details of our methods. Then, we evaluate
+Springer Nature 2021 LATEX template
+Table 1 Denoising results of color images with Gaussian noise on four testing datasets and three noise levels. The best
+results are marked by bold fonts.
+CBSD68 [46] Kodak24 [20] McMaster [78] Urban100 [29]
+Method σ=15 σ=25 σ=50 σ=15 σ=25 σ=50 σ=15 σ=25 σ=50 σ=15 σ=25 σ=50 MACs
+IRCNN [76] 33.86 31.16 27.86 34.69 32.18 28.93 34.58 32.18 28.91 33.78 31.20 27.70 -
+FFDNet [77] 33.87 31.21 27.96 34.63 32.13 28.98 34.66 32.35 29.18 33.83 31.40 28.05 -
+DnCNN [75] 33.90 31.24 27.95 34.60 32.14 28.95 33.45 31.52 28.62 32.98 30.81 27.59 37G
+DSNet [50] 33.91 31.28 28.05 34.63 32.16 29.05 34.67 32.40 29.28 - - -
+DRUNet 34.30 31.69 28.51 35.31 32.89 29.86 35.40 33.14 30.08 34.81 32.60 29.61 144G
+RPCNN [65] - 31.24 28.06 - 32.34 29.25 - 32.33 29.33 - 31.81 28.62 -
+BRDNet [60] 34.10 31.43 28.16 34.88 32.41 29.22 35.08 32.75 29.52 34.42 31.99 28.56 -
+RNAN [82] - - 28.27 - - 29.58 - - 29.72 - - 29.08 496G
+RDN [83] - - 28.31 - - 29.66 - - - - - 29.38 1.4T
+IPT [12] - - 28.39 - - 29.64 - - 29.98 - - 29.71 512G
+SwinIR [40] 34.42 31.78 28.56 35.34 32.89 29.79 35.61 33.20 30.22 35.13 32.90 29.82 759G
+Restormer [69] 34.40 31.79 28.60 35.47 33.04 30.01 35.61 33.34 30.30 35.13 32.96 30.02 141G
+KBNets 34.41 31.80 28.62 35.46 33.05 30.04 35.56 33.31 30.27 35.15 32.96 30.04 69G
+Fig. 3 PSNR v.s MACs of different methods on Gaussian denoising of color images. PSNRs are tested on Urban
+dataset with noise level σ = 50.
+our KBNet on popular benchmarks over synthetic denoising, real-world denoising, deraining
+and deblurring tasks. Finally, we conduct ablation
+studies on Gaussian denoising to validate important designs of our method and compare KBNet
+with existing methods.
+4.1 Implementation Details
+The default setting of our method is introduced as
+follows unless otherwise specified. The block numbers for each stage in the encoder and decoder of
+our KBNet are {2, 2, 2, 2} and {4, 2, 2, 2}, respectively. For the KBA module, The number of kernel
+basis is set to 32 by default. For each kernel base,
+we use a grouped convolution kernel with kernel
+size 3 × 3 and 4 channels for each group. We train
+our model for 300k iterations for each noise level.
+The patch size is 256 × 256, batch size is 32, and
+learning rate is 10−3
+following the training settings
+of NAFNet [13].
+4.2 Gaussian Denoising Results
+Color and gray image denoising for Gaussian noise
+is widely used as benchmarks for evaluating the
+denoising methods. We follow the previous methods [69] to show color image denoising results on
+CBSD68 [46], Kodak24 [20], McMaster [78], and
+Urban100 [29] datasets. For gray image denoising,
+we use Set12 [75], BSD68 [46], and Urban100 [29]
+as the testing datasets. We train our Gaussian
+denoising models KBNets on the ImageNet validation dataset over 3 noise levels (σ ∈ {15, 25, 50})
+for both color and gray images.
+The results of Gaussian denoising on color
+images are shown in Tab. 1. Our method outperforms the previous state-of-the-art Restormer,
+but only requires half of its computational cost.
+It is also worth noticing that we do not use progressive patch sampling to improve the training
+performance as Restormer [69]. Compared with
+the window-based transformer SwinIR [40], we
+train KBNet for 300k iterations, which is much
+fewer than 1.6M iterations used in SwinIR [40].
+The performance-efficiency comparisons with previous methods are shown in Fig. 3. Our KBNet
+achieves state-of-the-art results while requiring
+half of the computational cost. Some visual results
+can be found in Fig. 4. Thanks to the pixel-wise
+Springer Nature 2021 LATEX template
+7
+Table 2 Gaussian denoising results of gray images on three testing datasets and three noise levels. The best result are
+marked in bold.
+Set12 [75] BSD68 [46] Urban100 [29]
+Method σ=15 σ=25 σ=50 σ=15 σ=25 σ=50 σ=15 σ=25 σ=50 MACs
+DnCNN [75] 32.67 30.35 27.18 31.62 29.16 26.23 32.28 29.80 26.35 37G
+FFDNet [77] 32.75 30.43 27.32 31.63 29.19 26.29 32.40 29.90 26.50 -
+IRCNN [76] 32.76 30.37 27.12 31.63 29.15 26.19 32.46 29.80 26.22 -
+DRUNet [74] 33.25 30.94 27.90 31.91 29.48 26.59 33.44 31.11 27.96 144G
+FOCNet [30] 33.07 30.73 27.68 31.83 29.38 26.50 33.15 30.64 27.40 -
+MWCNN [43] 33.15 30.79 27.74 31.86 29.41 26.53 33.17 30.66 27.42 -
+NLRN [41] 33.16 30.80 27.64 31.88 29.41 26.47 33.45 30.94 27.49 -
+RNAN [82] - - 27.70 - - 26.48 - - 27.65 496G
+DeamNet [53] 33.19 30.81 27.74 31.91 29.44 26.54 33.37 30.85 27.53 146G
+DAGL [48] 33.28 30.93 27.81 31.93 29.46 26.51 33.79 31.39 27.97 256G
+SwinIR [40] 33.36 31.01 27.91 31.97 29.50 26.58 33.70 31.30 27.98 759G
+Restormer [69] 33.42 31.08 28.00 31.96 29.52 26.62 33.79 31.46 28.29 141G
+KBNets 33.40 31.08 28.04 31.98 29.54 26.65 33.77 31.45 28.33 69G
+Full Image Noisy SwinIR [40] Restormer [69] Ours Ground Truth
+Fig. 4 Visualization results on Gaussian denoising of color images on Urban100 dataset [29]. KBNet can recover more fine
+textures
+adaptive aggregation, KBNet can recover more
+textures even for some very thin edges.
+For Gaussian denoising of gray images, as
+shown in Tab. 2, KBNet shows consistent performance as the color image denoising. It outperforms the previous state-of-the-art method
+Restormer [69] slightly, but only uses less than half
+of its MACs.
+4.3 Raw Image Denoising Results
+For real-world denoising, we conduct experiments
+on SIDD dataset [1] and SenseNoise dataset [79]
+to evaluate our method on both indoor and outdoor scenes. Besides the KBNets, we also provide
+a heavier model KBNetl that adopts the FFN
+design of in Restormer [69] to perform positionwise non-linear transformation on the SenseNoise
+dataset.
+SIDD: The SIDD dataset is collected on indoor
+scenes. Five smartphones are used to capture
+scenes at different noise levels. SIDD contains 320
+image pairs for training and 1, 280 for validation.
+As shown in Tab. 3, KBNet achieves state-ofthe-art results on SIDD dataset. It outperforms
+very recent transformer-based methods including Restormer [69], Uformer [63], MAXIM [61]
+and CNN-based methods NAFNet [13] with fewer
+MACs. Fig. 6 shows the performance-efficiency
+comparisons of our method. KBNet achieves the
+best trade-offs.
+Springer Nature 2021 LATEX template
+Table 3 Denoising comparisons on SIDD [1] dataset.
+Method DnCNN MLP FoE BM3D WNNM NLM KSVD EPLL CBDNet
+[75] [9] [55] [17] [24] [8] [4] [84] [25]
+PSNR ↑ 23.66 24.71 25.58 25.65 25.78 26.76 26.88 27.11 30.78
+SSIM ↑ 0.583 0.641 0.792 0.685 0.809 0.699 0.842 0.870 0.754
+Method RIDNet VDN MIRNet NBNet Uformer MAXIM Restormer NAFNet KBNets
+[6] [68] [70] [15] [63] [61] [69] [13] (Ours)
+PSNR ↑ 38.71 39.28 39.72 39.75 39.89 39.96 40.02 40.30 40.35
+SSIM ↑ 0.914 0.909 0.959 0.959 0.960 0.960 0.960 0.962 0.972
+MACs ↓ 89 - 786 88.8 89.5 169.5 140 65 57.8
+Full Image
+Noisy RIDNet [6] MIRNet [70] Uformer [63]
+NAFNet [13] Restormer [69] KBNet(Ours) GT
+Fig. 5 Visualization of denoising results on SenseNoise dataset [79]. Our method produces clearer edges and more faithful
+colors.
+Fig. 6 PSNR v.s MACs of different methods on real-world
+image denoising on SIDD dataset [1].
+SenseNoise: SenseNoise dataset contains 500
+diverse scenes, where each image is of high resolution (e.g. 4000 × 3000). It contains both indoor
+and outdoor scenes with high-quality ground
+truth. We train the existing methods on the
+SenseNoise dataset [79] under the same training
+setting of NAFNet [13] but use 100k iterations.
+Since some of the models are too heavy, we
+Fig. 7 PSNR v.s MACs of different methods on real-world
+denoising SenseNoie dataset [79].
+scale down their channel numbers for fast training. The performance and MACs are reported in
+Tab. 4. Our method not only outperforms all other
+methods but also achieves the best performanceefficiency trade-offs as shown in Fig. 7. Some
+visualizations are shown in Fig. 5. KBNet produces sharper edges and recovers more vivid colors
+than previous methods.
+Springer Nature 2021 LATEX template
+9
+Table 4 Denoising comparisons on SenseNoise [79] dataset.
+Method DnCNN RIDNet MIRNet MPRNet Uformer Restormer NAFNet KBNets KBNetl
+[75] [6] [70] [71] [63] [69] [13] (Ours) (Ours)
+PSNR ↑ 34.06 34.88 35.30 35.43 35.43 35.52 35.55 35.60 35.69
+SSIM ↑ 0.904 0.915 0.919 0.922 0.920 0.924 0.923 0.924 0.924
+MACs ↓ 37 89 130 120 90 80 65 57.8 104
+Table 5 Comparison of defocus deblurring results on DPDD testset [3] containing 37 indoor and 39 outdoor scenes.
+Indoor Scenes Outdoor Scenes
+Method PSNR ↑ SSIM ↑ MAE ↓ LPIPS ↓ PSNR ↑ SSIM ↑ MAE ↓ LPIPS ↓ MACs ↓
+EBDB [33] 25.77 0.772 0.040 0.297 21.25 0.599 0.058 0.373 -
+DMENet [34] 25.50 0.788 0.038 0.298 21.43 0.644 0.063 0.397 1173
+JNB [57] 26.73 0.828 0.031 0.273 21.10 0.608 0.064 0.355 -
+DPDNet [3] 26.54 0.816 0.031 0.239 22.25 0.682 0.056 0.313 991G
+KPAC [59] 27.97 0.852 0.026 0.182 22.62 0.701 0.053 0.269 -
+IFAN [35] 28.11 0.861 0.026 0.179 22.76 0.720 0.052 0.254 363G
+Restormer [69] 28.87 0.882 0.025 0.145 23.24 0.743 0.050 0.209 141G
+KBNets 28.42 0.872 0.026 0.159 23.10 0.736 0.050 0.233 69G
+KBNetl 28.89 0.883 0.024 0.143 23.32 0.749 0.049 0.205 108G
+Rainy Restormer [69] Ours GT
+Fig. 8 Visualization results of defocus deblurring.
+4.4 Deraining and Defocus results
+To demonstrate the generalization and effectiveness of our KBNet, we follow the state-of-theart image restoration method Restormer [69] to
+conduct experiments on deraining and defocus
+deblurring. The channels of our MFF module are
+adjusted to make sure our model uses fewer MACs
+than Restormer [69]. The training settings are
+kept the same as the Restormer [69].
+Deraining. The largest two datasets (Test2800
+and Test1200) are used for testing deraining performance. Results in Tab. 6 indicate that our
+KBNet has a good generalization on deraining.
+KBNetl outperforms Restormer [69] using only
+76% of its MACs. On the Test1200 dataset,
+Rainy Restormer [69] Ours GT
+Fig. 9 Visualization results of deraining.
+KBNetl produces more than 0.5dB improvement.
+Some visualization results can be found in Fig. 9.
+Defocus Deblurring. As shown in Tab. 5, we
+test our model on both indoor and outdoor scenes
+for deblurring. KBNets outperforms most previous methods using only 69G MACs. KBNetl outperforms previous state-of-the-art Restormer [69]
+while having 24% fewer MACs. Some visualization
+results are shown in Fig. 9.
+4.5 Ablation Studies
+We conduct extensive ablation studies to validate
+the effectiveness of components of our method and
+compare it with existing methods. All ablation
+studies are conducted on Gaussian denoising with
+Springer Nature 2021 LATEX template
+Table 6 Image deraining results.
+Test2800 [22] Test1200 [73]
+Method PSNR ↑ SSIM ↑ PSNR ↑ SSIM ↑ MACs ↓
+DerainNet [21] 24.31 0.861 23.38 0.835 -
+SEMI [64] 24.43 0.782 26.05 0.822 -
+DIDMDN [73] 28.13 0.867 29.65 0.901 -
+UMRL [67] 29.97 0.905 30.55 0.910 -
+RESCAN [39] 31.29 0.904 30.51 0.882 -
+PreNet [54] 31.75 0.916 31.36 0.911 66.2G
+MSPFN [31] 32.82 0.930 32.39 0.916 -
+MPRNet [72] 33.64 0.938 32.91 0.916 1.4T
+SPAIR [52] 33.34 0.936 33.04 0.922 -
+Restormer [69] 34.18 0.944 33.19 0.926 141G
+KBNets 33.10 0938 32.29 0.912 69G
+KBNetl 34.19 0.944 33.82 0.931 108G
+Table 7 Ablation studies on the dynamic spatial
+aggregation design choices.
+Method PSNR SSIM MACs
+Dynamic conv [14] 29.31 0.881 12G
+Kernel prediction module [47] 29.29 0.881 55.1G
+Shifted window attention [63] 29.33 0.882 21.9G
+KBA w/ softmax 29.40 0.883 15.3G
+KBA (Ours) 29.47 0.884 15.3G
+Table 8 The influence of the kernel basis number.
+Kernel Bases Number PSNR
+N = 4 29.36
+N = 8 29.41
+N = 16 29.44
+N = 32 29.47
+N = 64 29.51
+N = 128 29.54
+Table 9 The effectiveness of different branches in MFF
+block.
+Method PSNR
+DW3 × 3 29.12
+DW3 × 3 + CA 29.22
+DW3 × 3 + CA + KBA 29.47
+noise level σ = 50. We train models for 100k iterations. Other training settings are kept the same
+as the main experiment on the Gaussian denoising
+of color images.
+Comparison with dynamic spatial aggregation methods. We compare our method with
+existing dynamic aggregation solutions, including the window-based self-attention [63], dynamic
+convolution [14], and kernel prediction module [47, 62] to replace our KBA module in the
+proposed MFF blocks. As shown in Tab. 7,
+directly adopting the kernel prediction module
+in [47] requires heavy computational cost. While
+the dynamic convolution [14] predicts spatialinvariant dynamic kernels, it slightly outperforms
+the kernel prediction module. This demonstrates
+that the kernel prediction module is difficult to
+optimize as it requires predicting a large number of
+kernel weights directly. Most existing works [7, 47,
+66] need to adopt a heavy computational branch to
+realize the kernel prediction. The shifted window
+attention requires more MACs while only improving the performance marginally than the dynamic
+convolution. Our method is more lightweight and
+improves performance significantly.
+Using softmax in KBA module. To linearly
+combine the kernel bases, a natural choice is to
+use the softmax function to normalize the kernel
+fusion coefficients. However, we find that using the
+softmax would hinder the performance as shown in
+Tab. 7. Using the softmax function may encourage
+the fused kernel more focus on a specific kernel
+basis and reduces the diversity of the fused kernel
+weights.
+The impact of the number of kernel
+bases. We also validate the influence of the
+number of kernel bases. As shown in Tab. 8,
+more kernel bases bring consistent performance
+improvements since it captures more image patterns and increases the diversity of the spatial
+Springer Nature 2021 LATEX template
+11
+Noisy GT 64 × 64 256 × 256
+Fig. 10 Visualization of kernel indices in different stages.
+The fusion coefficient map is transformed into a 3D RGB
+map by random projection.
+information aggregation. In our experiments, we
+select N = 32 for a better performance-efficiency
+trade-off.
+The impact of different branches in MFF
+block. As shown in Tab. 9, a single 3 × 3 depthwise convolution branch produces 29.12 dB on
+Gaussian denoising. Adding the channel attention
+branch and KBA module branch successively leads
+to 0.1dB and 0.25dB respectively. KBA module
+brings the largest improvement, which indicates
+the importance of the proposed pixel adaptive
+spatial information processing.
+Visulization of kernel indices. We visualize
+the kernel indices of different regions in different stages of our KBNet. We project the fusion
+coefficients to a 3D space by random projection
+and visualize them as an RGB map. As shown in
+Fig. 10, similar color indicates that the pixels fuse
+kernel bases having similar patterns. KBNet can
+identify different regions and share similar kernel
+bases for similar textural or plain areas. Different
+kernels are learned to be responsible for different
+regions, and they can be optimized jointly during
+the training.
+5 Conclusion
+In this paper, we introduce a kernel basis network
+(KBNet) for image restoration. The key designs
+of our KBNet are kernel basis attention (KBA)
+module and Multi-axis Feature Fusion (MFF)
+block. KBA module adopts the learnable kernel bases to model the local image patterns and
+fuse kernel bases linearly to aggregate the spatial
+information efficiently. Besides, the MFF block
+aims to fuse diverse features from multiple axes
+for image denoising, which includes channel-wise,
+spatial-invariant, and pixel-adaptive processing.
+In the experiments, KBNet achieves state-of-theart results on popular synthetic noise datasets
+and two real-world noise datasets (SIDD and
+SenseNoise) with less computational cost. It also
+presents good generalizations and state-of-the-art
+results on deraining and defocus deblurring.
