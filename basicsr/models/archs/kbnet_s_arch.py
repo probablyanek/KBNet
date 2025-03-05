@@ -120,7 +120,7 @@ class KBBlock_s(nn.Module):
         att = self.conv2(x) * self.attgamma + self.conv211(x)
         uf = self.conv21(self.conv1(x))
         x = self.KBA(uf, att, self.k, self.g, self.b, self.w) * self.ga1 + uf
-        x = x * x1 * sca
+        x = x * x1 * sca * self.fourier_att(x)
 
         x = self.conv3(x)
         x = self.dropout1(x)
